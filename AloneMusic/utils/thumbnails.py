@@ -8,7 +8,8 @@ from config import YOUTUBE_IMG_URL
 
 # Constants
 CACHE_DIR = "cache"
-os.makedirs(CACHE_DIR, exist_ok=True)
+if not os.path.exists(CACHE_DIR):
+    os.makedirs(CACHE_DIR)
 
 PANEL_W, PANEL_H = 763, 545
 PANEL_X = (1280 - PANEL_W) // 2
@@ -37,14 +38,17 @@ MAX_TITLE_WIDTH = 580
 
 def trim_to_width(text: str, font: ImageFont.FreeTypeFont, max_w: int) -> str:
     ellipsis = "…"
-    if font.getlength(text) <= max_w:
-        return text
-    for i in range(len(text) - 1, 0, -1):
-        if font.getlength(text[:i] + ellipsis) <= max_w:
-            return text[:i] + ellipsis
+    try:
+        if font.getlength(text) <= max_w:
+            return text
+        for i in range(len(text) - 1, 0, -1):
+            if font.getlength(text[:i] + ellipsis) <= max_w:
+                return text[:i] + ellipsis
+    except Exception:
+        return text[:25] + "..."
     return ellipsis
 
-async def gen_thumb(videoid: str) -> str:
+async def get_thumb(videoid: str) -> str:
     cache_path = os.path.join(CACHE_DIR, f"{videoid}_v4.png")
     if os.path.exists(cache_path):
         return cache_path
@@ -75,11 +79,17 @@ async def gen_thumb(videoid: str) -> str:
                 if resp.status == 200:
                     async with aiofiles.open(thumb_path, "wb") as f:
                         await f.write(await resp.read())
+                else:
+                    return YOUTUBE_IMG_URL
     except Exception:
         return YOUTUBE_IMG_URL
 
     # Create base image
-    base = Image.open(thumb_path).resize((1280, 720)).convert("RGBA")
+    try:
+        base = Image.open(thumb_path).resize((1280, 720)).convert("RGBA")
+    except Exception:
+        return YOUTUBE_IMG_URL
+
     bg = ImageEnhance.Brightness(base.filter(ImageFilter.BoxBlur(10))).enhance(0.6)
 
     # Frosted glass panel
@@ -92,10 +102,22 @@ async def gen_thumb(videoid: str) -> str:
 
     # Draw details
     draw = ImageDraw.Draw(bg)
+    
+    # Font Fallback Logic
+    font_path1 = "ANNIEMUSIC/assets/thumb/font2.ttf"
+    font_path2 = "ANNIEMUSIC/assets/thumb/font.ttf"
+    
     try:
-        title_font = ImageFont.truetype("ANNIEMUSIC/assets/thumb/font2.ttf", 32)
-        regular_font = ImageFont.truetype("ANNIEMUSIC/assets/thumb/font.ttf", 18)
-    except OSError:
+        if os.path.exists(font_path1):
+            title_font = ImageFont.truetype(font_path1, 32)
+        else:
+            title_font = ImageFont.load_default()
+            
+        if os.path.exists(font_path2):
+            regular_font = ImageFont.truetype(font_path2, 18)
+        else:
+            regular_font = ImageFont.load_default()
+    except Exception:
         title_font = regular_font = ImageFont.load_default()
 
     thumb = base.resize((THUMB_W, THUMB_H))
@@ -118,14 +140,18 @@ async def gen_thumb(videoid: str) -> str:
     # Icons
     icons_path = "AnieXEricaMusic/assets/thumb/play_icons.png"
     if os.path.isfile(icons_path):
-        ic = Image.open(icons_path).resize((ICONS_W, ICONS_H)).convert("RGBA")
-        r, g, b, a = ic.split()
-        black_ic = Image.merge("RGBA", (r.point(lambda *_: 0), g.point(lambda *_: 0), b.point(lambda *_: 0), a))
-        bg.paste(black_ic, (ICONS_X, ICONS_Y), black_ic)
+        try:
+            ic = Image.open(icons_path).resize((ICONS_W, ICONS_H)).convert("RGBA")
+            r, g, b, a = ic.split()
+            black_ic = Image.merge("RGBA", (r.point(lambda x: 0), g.point(lambda x: 0), b.point(lambda x: 0), a))
+            bg.paste(black_ic, (ICONS_X, ICONS_Y), black_ic)
+        except Exception:
+            pass
 
     # Cleanup and save
     try:
-        os.remove(thumb_path)
+        if os.path.exists(thumb_path):
+            os.remove(thumb_path)
     except OSError:
         pass
 
