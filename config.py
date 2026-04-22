@@ -19,7 +19,7 @@ API_ID = int(getenv("API_ID", "26249286"))
 API_HASH = getenv("API_HASH", "4e3bf0b014fda4ac752e8f4ab854279b")
 
 # Get your token from @BotFather on Telegram.
-BOT_TOKEN = getenv("BOT_TOKEN", "8287492525:AAEkWgl73gXwBBNHIiS2HCcs9IUIaZgabvc")
+BOT_TOKEN = getenv("BOT_TOKEN", "8741528429:AAHBNuMvSq387d9H_0bsFMKmvJsQ62dUGDU")
 
 # Get your mongo url from cloud.mongodb.com
 MONGO_DB_URI = getenv("MONGO_DB_URI", "mongodb+srv://musicbotxd:musicbotxd@cluster0.6thyk.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
@@ -91,16 +91,16 @@ confirmer = {}
 
 START_IMG_URL = getenv(
     "START_IMG_URL",
-    "https://i.ibb.co/ZpY1Hjzv/photo-2026-04-16-03-16-11-7629209287591460884.jpg",
+    "https://repgyetdcodkynrbxocg.supabase.co/storage/v1/object/public/images/telegram-1776841034406-c79c4ca7.jpg",
 )
 PING_IMG_URL = getenv(
     "PING_IMG_URL",
-    "https://i.ibb.co/NgzF8F69/photo-2026-04-16-03-16-11-7629210855254523916.jpg",
+    "https://repgyetdcodkynrbxocg.supabase.co/storage/v1/object/public/images/telegram-1776841063817-c34c8f54.jpg",
 )
-PLAYLIST_IMG_URL = "https://i.ibb.co/FLDbV0Lg/photo-2026-04-16-03-16-12-7629211061412954120.jpg"
-STATS_IMG_URL = "https://i.ibb.co/7xQFwyn7/photo-2026-04-16-03-16-11-7629211125837463560.jpg"
-TELEGRAM_AUDIO_URL = "https://i.ibb.co/twRbddfH/photo-2026-04-16-03-16-12-7629211203146874884.jpg"
-TELEGRAM_VIDEO_URL = "https://files.catbox.moe/34xlvu.jpg"
+PLAYLIST_IMG_URL = "https://repgyetdcodkynrbxocg.supabase.co/storage/v1/object/public/images/telegram-1776841014403-6abf3244.jpg"
+STATS_IMG_URL = "https://repgyetdcodkynrbxocg.supabase.co/storage/v1/object/public/images/telegram-1776841063817-c34c8f54.jpg"
+TELEGRAM_AUDIO_URL = "https://repgyetdcodkynrbxocg.supabase.co/storage/v1/object/public/images/telegram-1776841034406-c79c4ca7.jpg"
+TELEGRAM_VIDEO_URL = "https://repgyetdcodkynrbxocg.supabase.co/storage/v1/object/public/images/telegram-1776841034406-c79c4ca7.jpg"
 STREAM_IMG_URL = "https://files.catbox.moe/34xlvu.jpg"
 SOUNCLOUD_IMG_URL = "https://files.catbox.moe/34xlvu.jpg"
 YOUTUBE_IMG_URL = "https://files.catbox.moe/34xlvu.jpg"
