@@ -1,143 +1,133 @@
-#
-# Copyright (C) 2021-2022 by TheAloneteam@Github, < https://github.com/TheAloneTeam >.
-#
-# This file is part of < https://github.com/TheAloneTeam/AloneMusic > project,
-# and is released under the "GNU v3.0 License Agreement".
-# Please see < https://github.com/TheAloneTeam/AloneMusic/blob/master/LICENSE >
-#
-# All rights reserved.
-
 import os
 import re
 import aiofiles
 import aiohttp
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
-from py_yt import VideosSearch
+from youtubesearchpython.__future__ import VideosSearch
 from config import YOUTUBE_IMG_URL
 
-def changeImageSize(maxWidth, maxHeight, image):
-    widthRatio = maxWidth / image.size[0]
-    heightRatio = maxHeight / image.size[1]
-    newWidth = int(widthRatio * image.size[0])
-    newHeight = int(heightRatio * image.size[1])
-    return image.resize((newWidth, newHeight), Image.LANCZOS)
+# Constants
+CACHE_DIR = "cache"
+os.makedirs(CACHE_DIR, exist_ok=True)
 
-async def get_thumb(videoid):
-    if os.path.isfile(f"cache/{videoid}.png"):
-        return f"cache/{videoid}.png"
+PANEL_W, PANEL_H = 763, 545
+PANEL_X = (1280 - PANEL_W) // 2
+PANEL_Y = 88
+TRANSPARENCY = 170
+INNER_OFFSET = 36
 
-    url = f"https://www.youtube.com/watch?v={videoid}"
+THUMB_W, THUMB_H = 542, 273
+THUMB_X = PANEL_X + (PANEL_W - THUMB_W) // 2
+THUMB_Y = PANEL_Y + INNER_OFFSET
+
+TITLE_X = 377
+META_X = 377
+TITLE_Y = THUMB_Y + THUMB_H + 10
+META_Y = TITLE_Y + 45
+
+BAR_X, BAR_Y = 388, META_Y + 45
+BAR_RED_LEN = 280
+BAR_TOTAL_LEN = 480
+
+ICONS_W, ICONS_H = 415, 45
+ICONS_X = PANEL_X + (PANEL_W - ICONS_W) // 2
+ICONS_Y = BAR_Y + 48
+
+MAX_TITLE_WIDTH = 580
+
+def trim_to_width(text: str, font: ImageFont.FreeTypeFont, max_w: int) -> str:
+    ellipsis = "…"
+    if font.getlength(text) <= max_w:
+        return text
+    for i in range(len(text) - 1, 0, -1):
+        if font.getlength(text[:i] + ellipsis) <= max_w:
+            return text[:i] + ellipsis
+    return ellipsis
+
+async def gen_thumb(videoid: str) -> str:
+    cache_path = os.path.join(CACHE_DIR, f"{videoid}_v4.png")
+    if os.path.exists(cache_path):
+        return cache_path
+
+    # YouTube video data fetch
+    results = VideosSearch(f"https://www.youtube.com/watch?v={videoid}", limit=1)
     try:
-        results = VideosSearch(url, limit=1)
-        for result in (await results.next())["result"]:
-            try:
-                title = result["title"]
-                title = re.sub(r"\W+", " ", title).title()
-            except:
-                title = "Unsupported Title"
-            try:
-                duration = result["duration"]
-            except:
-                duration = "Unknown"
-            thumbnail = result["thumbnails"][0]["url"].split("?")[0]
-            try:
-                views = result["viewCount"]["short"]
-            except:
-                views = "Unknown Views"
+        results_data = await results.next()
+        result_items = results_data.get("result", [])
+        if not result_items:
+            raise ValueError("No results found.")
+        data = result_items[0]
+        title = re.sub(r"\W+", " ", data.get("title", "Unsupported Title")).title()
+        thumbnail = data.get("thumbnails", [{}])[0].get("url", YOUTUBE_IMG_URL)
+        duration = data.get("duration")
+        views = data.get("viewCount", {}).get("short", "Unknown Views")
+    except Exception:
+        title, thumbnail, duration, views = "Unsupported Title", YOUTUBE_IMG_URL, None, "Unknown Views"
 
+    is_live = not duration or str(duration).strip().lower() in {"", "live", "live now"}
+    duration_text = "Live" if is_live else duration or "Unknown Mins"
+
+    # Download thumbnail
+    thumb_path = os.path.join(CACHE_DIR, f"thumb{videoid}.png")
+    try:
         async with aiohttp.ClientSession() as session:
             async with session.get(thumbnail) as resp:
                 if resp.status == 200:
-                    f = await aiofiles.open(f"cache/thumb{videoid}.png", mode="wb")
-                    await f.write(await resp.read())
-                    await f.close()
-
-        youtube = Image.open(f"cache/thumb{videoid}.png")
-
-        # Configuration
-        GLOW_COLOR = "#ff0099"  
-        BORDER_COLOR = "#FF1493"  
-        
-        # Background Processing
-        image1 = changeImageSize(1280, 720, youtube)
-        # REMOVED: image1 = image1.filter(ImageFilter.GaussianBlur(20)) <-- This was the "spoiler" blur
-        image1 = ImageEnhance.Brightness(image1).enhance(0.6) # Slightly brighter background
-
-        thumb_width, thumb_height = 840, 460
-        youtube_thumb = youtube.resize((thumb_width, thumb_height), Image.LANCZOS)
-
-        # Create Rounded Corner Mask
-        mask = Image.new("L", (thumb_width, thumb_height), 0)
-        draw_mask = ImageDraw.Draw(mask)
-        draw_mask.rounded_rectangle([(0, 0), (thumb_width, thumb_height)], radius=25, fill=255)
-        youtube_thumb.putalpha(mask)
-
-        center_x, center_y_img = 640, 300
-        thumb_x = center_x - (thumb_width // 2)
-        thumb_y = center_y_img - (thumb_height // 2)
-        thumb_x2, thumb_y2 = thumb_x + thumb_width, thumb_y + thumb_height
-
-        # Aesthetic Glow Effect
-        glow_layer = Image.new("RGBA", (1280, 720), (0, 0, 0, 0))
-        draw_glow = ImageDraw.Draw(glow_layer)
-        draw_glow.rounded_rectangle(
-            [(thumb_x - 15, thumb_y - 15), (thumb_x2 + 15, thumb_y2 + 15)],
-            radius=35, fill=GLOW_COLOR
-        )
-        glow_layer = glow_layer.filter(ImageFilter.GaussianBlur(25))
-        image1.paste(glow_layer, (0, 0), glow_layer)
-
-        # Border
-        border_layer = Image.new("RGBA", (1280, 720), (0, 0, 0, 0))
-        draw_border = ImageDraw.Draw(border_layer)
-        draw_border.rounded_rectangle(
-            [(thumb_x - 5, thumb_y - 5), (thumb_x2 + 5, thumb_y2 + 5)],
-            radius=30, fill=BORDER_COLOR
-        )
-        image1.paste(border_layer, (0, 0), border_layer)
-        image1.paste(youtube_thumb, (thumb_x, thumb_y), youtube_thumb)
-
-        draw = ImageDraw.Draw(image1)
-        try:
-            font_title = ImageFont.truetype("AloneMusic/assets/font.ttf", 45)
-            font_details = ImageFont.truetype("AloneMusic/assets/font2.ttf", 30)
-        except:
-            font_title = ImageFont.load_default()
-            font_details = ImageFont.load_default()
-
-        # Title Rendering
-        if len(title) > 40:
-            title = title[:40] + "..."
-        
-        # Center the text
-        w_title = draw.textbbox((0, 0), title, font=font_title)[2]
-        text_y_pos = thumb_y2 + 50
-        
-        draw.text(((1280 - w_title) / 2, text_y_pos), title, fill="white", font=font_title, stroke_width=2, stroke_fill="black")
-
-        # Stats Rendering
-        stats_text = f"⚡ {views} Views  |  🕒 {duration}  |  🎸 @aashikmusicbot"
-        w_stats = draw.textbbox((0, 0), stats_text, font=font_details)[2]
-        draw.text(((1280 - w_stats) / 2, text_y_pos + 65), stats_text, fill=BORDER_COLOR, font=font_details, stroke_width=1, stroke_fill="black")
-
-        # Clean and Save
-        if os.path.exists(f"cache/thumb{videoid}.png"):
-            os.remove(f"cache/thumb{videoid}.png")
-
-        file_name = f"cache/{videoid}.png"
-        image1.save(file_name)
-        return file_name
-
-    except Exception as e:
-        print(f"Error generating thumb: {e}")
+                    async with aiofiles.open(thumb_path, "wb") as f:
+                        await f.write(await resp.read())
+    except Exception:
         return YOUTUBE_IMG_URL
 
-async def get_qthumb(vidid):
+    # Create base image
+    base = Image.open(thumb_path).resize((1280, 720)).convert("RGBA")
+    bg = ImageEnhance.Brightness(base.filter(ImageFilter.BoxBlur(10))).enhance(0.6)
+
+    # Frosted glass panel
+    panel_area = bg.crop((PANEL_X, PANEL_Y, PANEL_X + PANEL_W, PANEL_Y + PANEL_H))
+    overlay = Image.new("RGBA", (PANEL_W, PANEL_H), (255, 255, 255, TRANSPARENCY))
+    frosted = Image.alpha_composite(panel_area, overlay)
+    mask = Image.new("L", (PANEL_W, PANEL_H), 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, PANEL_W, PANEL_H), 50, fill=255)
+    bg.paste(frosted, (PANEL_X, PANEL_Y), mask)
+
+    # Draw details
+    draw = ImageDraw.Draw(bg)
     try:
-        url = f"https://www.youtube.com/watch?v={vidid}"
-        results = VideosSearch(url, limit=1)
-        for result in (await results.next())["result"]:
-            return result["thumbnails"][0]["url"].split("?")[0]
-    except Exception as e:
-        print(e)
-        return YOUTUBE_IMG_URL
+        title_font = ImageFont.truetype("ANNIEMUSIC/assets/thumb/font2.ttf", 32)
+        regular_font = ImageFont.truetype("ANNIEMUSIC/assets/thumb/font.ttf", 18)
+    except OSError:
+        title_font = regular_font = ImageFont.load_default()
+
+    thumb = base.resize((THUMB_W, THUMB_H))
+    tmask = Image.new("L", thumb.size, 0)
+    ImageDraw.Draw(tmask).rounded_rectangle((0, 0, THUMB_W, THUMB_H), 20, fill=255)
+    bg.paste(thumb, (THUMB_X, THUMB_Y), tmask)
+
+    draw.text((TITLE_X, TITLE_Y), trim_to_width(title, title_font, MAX_TITLE_WIDTH), fill="black", font=title_font)
+    draw.text((META_X, META_Y), f"YouTube | {views}", fill="black", font=regular_font)
+
+    # Progress bar
+    draw.line([(BAR_X, BAR_Y), (BAR_X + BAR_RED_LEN, BAR_Y)], fill="red", width=6)
+    draw.line([(BAR_X + BAR_RED_LEN, BAR_Y), (BAR_X + BAR_TOTAL_LEN, BAR_Y)], fill="gray", width=5)
+    draw.ellipse([(BAR_X + BAR_RED_LEN - 7, BAR_Y - 7), (BAR_X + BAR_RED_LEN + 7, BAR_Y + 7)], fill="red")
+
+    draw.text((BAR_X, BAR_Y + 15), "00:00", fill="black", font=regular_font)
+    end_text = "Live" if is_live else duration_text
+    draw.text((BAR_X + BAR_TOTAL_LEN - (90 if is_live else 60), BAR_Y + 15), end_text, fill="red" if is_live else "black", font=regular_font)
+
+    # Icons
+    icons_path = "AnieXEricaMusic/assets/thumb/play_icons.png"
+    if os.path.isfile(icons_path):
+        ic = Image.open(icons_path).resize((ICONS_W, ICONS_H)).convert("RGBA")
+        r, g, b, a = ic.split()
+        black_ic = Image.merge("RGBA", (r.point(lambda *_: 0), g.point(lambda *_: 0), b.point(lambda *_: 0), a))
+        bg.paste(black_ic, (ICONS_X, ICONS_Y), black_ic)
+
+    # Cleanup and save
+    try:
+        os.remove(thumb_path)
+    except OSError:
+        pass
+
+    bg.save(cache_path)
+    return cache_path
