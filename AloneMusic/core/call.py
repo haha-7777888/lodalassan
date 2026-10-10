@@ -119,6 +119,14 @@ class Call(PyTgCalls):
         video: bool,
         ffmpeg: str | None = None,
     ) -> types.MediaStream:
+        # PyTgCalls rejects None/empty media paths with a low-level TypeError.
+        # Validate here so the real source of the problem is explicit.
+        if source is None or (isinstance(source, str) and not source.strip()):
+            raise ValueError(
+                "Cannot build media stream: source is empty. "
+                "Check the downloader/stream extractor that supplies the media URL or file path."
+            )
+
         return types.MediaStream(
             media_path=source,
             audio_parameters=types.AudioQuality.HIGH,
@@ -371,6 +379,11 @@ class Call(PyTgCalls):
     ):
         assistant = await group_assistant(self, chat_id)
         await self.play_greeting(chat_id)
+        if link is None or (isinstance(link, str) and not link.strip()):
+            raise AssistantErr(
+                "Could not skip to the track because its media URL is empty. "
+                "Please try playing the song again."
+            )
         stream = self._build_stream(link, video=bool(video))
         await self._play_on_assistant(assistant, chat_id, stream)
 
@@ -411,6 +424,11 @@ class Call(PyTgCalls):
         language = await get_lang(chat_id)
         _ = get_string(language)
         await self.play_greeting(chat_id)
+        if link is None or (isinstance(link, str) and not link.strip()):
+            raise AssistantErr(
+                "Could not start playback because the media URL is empty. "
+                "Please try the song again; if it repeats, check the YouTube/stream extractor."
+            )
         stream = self._build_stream(link, video=bool(video))
         try:
             await self._play_on_assistant(assistant, chat_id, stream)
