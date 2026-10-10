@@ -59,135 +59,180 @@ except RuntimeError:
     pass
 
 
+def _normalize_youtube_url(link: str) -> str:
+    """Accept a YouTube URL or video ID and return a canonical watch URL."""
+    value = str(link or "").strip()
+    if not value:
+        return ""
+    if value.startswith(("http://", "https://")):
+        return value
+    return f"https://www.youtube.com/watch?v={value}"
+
+
+def _download_with_yt_dlp(link: str, video: bool = False):
+    """Synchronous yt-dlp fallback, executed in a worker thread."""
+    import glob
+
+    url = _normalize_youtube_url(link)
+    if not url:
+        return None
+
+    download_dir = "downloads"
+    os.makedirs(download_dir, exist_ok=True)
+    options = {
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+        "outtmpl": os.path.join(download_dir, "%(id)s.%(ext)s"),
+        "overwrites": False,
+        "retries": 2,
+        "fragment_retries": 2,
+        "socket_timeout": 30,
+    }
+    if video:
+        options["format"] = "best[height<=720][ext=mp4]/best[ext=mp4]/best"
+        options["merge_output_format"] = "mp4"
+    else:
+        options["format"] = "bestaudio/best"
+        options["postprocessors"] = [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "mp3",
+            "preferredquality": "192",
+        }]
+
+    try:
+        with yt_dlp.YoutubeDL(options) as ydl:
+            info = ydl.extract_info(url, download=True)
+            video_id = (info or {}).get("id")
+            candidates = []
+            if video_id:
+                candidates.extend(glob.glob(os.path.join(download_dir, f"{video_id}.*")))
+            # yt-dlp may return a final path even if the postprocessor changed the extension.
+            prepared = ydl.prepare_filename(info) if info else None
+            if prepared:
+                candidates.extend([
+                    prepared,
+                    os.path.splitext(prepared)[0] + ".mp3",
+                    os.path.splitext(prepared)[0] + ".mp4",
+                    os.path.splitext(prepared)[0] + ".mkv",
+                    os.path.splitext(prepared)[0] + ".webm",
+                ])
+            for candidate in dict.fromkeys(candidates):
+                if candidate and os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
+                    if not video or os.path.splitext(candidate)[1].lower() in {
+                        ".mp4", ".mkv", ".webm", ".mov"
+                    }:
+                        return candidate
+    except Exception as exc:
+        LOGGER("AloneMusic.platforms.Youtube.py").warning(
+            f"yt-dlp fallback failed: {type(exc).__name__}: {exc}"
+        )
+    return None
+
+
 async def download_song(link: str) -> str:
     global YOUR_API_URL
 
+    value = str(link or "").strip()
+    if not value:
+        return None
+
     if not YOUR_API_URL:
         await load_api_url()
-        if not YOUR_API_URL:
-            YOUR_API_URL = FALLBACK_API_URL
+    if not YOUR_API_URL:
+        YOUR_API_URL = FALLBACK_API_URL
 
-    video_id = link.split("v=")[-1].split("&")[0] if "v=" in link else link
-
+    # Keep the configured download API as the first choice.
+    video_id = value.split("v=")[-1].split("&")[0] if "v=" in value else value.rstrip("/").split("/")[-1]
     if not video_id or len(video_id) < 3:
         return None
 
-    DOWNLOAD_DIR = "downloads"
-    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-    file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp3")
-
-    if os.path.exists(file_path):
+    download_dir = "downloads"
+    os.makedirs(download_dir, exist_ok=True)
+    file_path = os.path.join(download_dir, f"{video_id}.mp3")
+    if os.path.isfile(file_path) and os.path.getsize(file_path) > 0:
         return file_path
 
     try:
         async with aiohttp.ClientSession() as session:
-            params = {"url": video_id, "type": "audio"}
-
             async with session.get(
                 f"{YOUR_API_URL}/download",
-                params=params,
+                params={"url": video_id, "type": "audio"},
                 timeout=aiohttp.ClientTimeout(total=60),
             ) as response:
-                if response.status != 200:
-                    return None
+                if response.status == 200:
+                    data = await response.json()
+                    token = data.get("download_token")
+                    if token:
+                        async with session.get(
+                            f"{YOUR_API_URL}/stream/{video_id}?type=audio",
+                            headers={"X-Download-Token": token},
+                            timeout=aiohttp.ClientTimeout(total=300),
+                        ) as file_response:
+                            if file_response.status == 200:
+                                with open(file_path, "wb") as output:
+                                    async for chunk in file_response.content.iter_chunked(16384):
+                                        output.write(chunk)
+                                if os.path.isfile(file_path) and os.path.getsize(file_path) > 0:
+                                    return file_path
+    except Exception as exc:
+        LOGGER("AloneMusic.platforms.Youtube.py").warning(
+            f"Primary audio downloader failed: {type(exc).__name__}: {exc}"
+        )
 
-                data = await response.json()
-                download_token = data.get("download_token")
-
-                if not download_token:
-                    return None
-
-                stream_url = f"{YOUR_API_URL}/stream/{video_id}?type=audio"
-
-                async with session.get(
-                    stream_url,
-                    headers={"X-Download-Token": download_token},
-                    timeout=aiohttp.ClientTimeout(total=300),
-                ) as file_response:
-                    if file_response.status != 200:
-                        return None
-
-                    with open(file_path, "wb") as f:
-                        async for chunk in file_response.content.iter_chunked(16384):
-                            f.write(chunk)
-
-                    return file_path
-
-    except Exception:
-        return None
+    return await asyncio.to_thread(_download_with_yt_dlp, _normalize_youtube_url(value), False)
 
 
 async def download_video(link: str) -> str:
     global YOUR_API_URL
 
+    value = str(link or "").strip()
+    if not value:
+        return None
+
     if not YOUR_API_URL:
         await load_api_url()
-        if not YOUR_API_URL:
-            YOUR_API_URL = FALLBACK_API_URL
+    if not YOUR_API_URL:
+        YOUR_API_URL = FALLBACK_API_URL
 
-    video_id = link.split("v=")[-1].split("&")[0] if "v=" in link else link
-
+    video_id = value.split("v=")[-1].split("&")[0] if "v=" in value else value.rstrip("/").split("/")[-1]
     if not video_id or len(video_id) < 3:
         return None
 
-    DOWNLOAD_DIR = "downloads"
-    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-    file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp4")
-
-    if os.path.exists(file_path):
+    download_dir = "downloads"
+    os.makedirs(download_dir, exist_ok=True)
+    file_path = os.path.join(download_dir, f"{video_id}.mp4")
+    if os.path.isfile(file_path) and os.path.getsize(file_path) > 0:
         return file_path
 
     try:
         async with aiohttp.ClientSession() as session:
-            params = {"url": video_id, "type": "video"}
-
             async with session.get(
                 f"{YOUR_API_URL}/download",
-                params=params,
+                params={"url": video_id, "type": "video"},
                 timeout=aiohttp.ClientTimeout(total=60),
             ) as response:
-                if response.status != 200:
-                    return None
+                if response.status == 200:
+                    data = await response.json()
+                    token = data.get("download_token")
+                    if token:
+                        async with session.get(
+                            f"{YOUR_API_URL}/stream/{video_id}?type=video",
+                            headers={"X-Download-Token": token},
+                            timeout=aiohttp.ClientTimeout(total=600),
+                        ) as file_response:
+                            if file_response.status == 200:
+                                with open(file_path, "wb") as output:
+                                    async for chunk in file_response.content.iter_chunked(16384):
+                                        output.write(chunk)
+                                if os.path.isfile(file_path) and os.path.getsize(file_path) > 0:
+                                    return file_path
+    except Exception as exc:
+        LOGGER("AloneMusic.platforms.Youtube.py").warning(
+            f"Primary video downloader failed: {type(exc).__name__}: {exc}"
+        )
 
-                data = await response.json()
-                download_token = data.get("download_token")
-
-                if not download_token:
-                    return None
-
-                stream_url = f"{YOUR_API_URL}/stream/{video_id}?type=video"
-
-                async with session.get(
-                    stream_url,
-                    headers={"X-Download-Token": download_token},
-                    timeout=aiohttp.ClientTimeout(total=600),
-                ) as file_response:
-                    if file_response.status != 200:
-                        return None
-
-                    with open(file_path, "wb") as f:
-                        async for chunk in file_response.content.iter_chunked(16384):
-                            f.write(chunk)
-
-                    return file_path
-
-    except Exception:
-        return None
-
-
-"""async def shell_cmd(cmd):
-    proc = await asyncio.create_subprocess_shell(
-        cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    out, errorz = await proc.communicate()
-    if errorz:
-        if "unavailable videos are hidden" in (errorz.decode("utf-8")).lower():
-            return out.decode("utf-8")
-        else:
-            return errorz.decode("utf-8")
-    return out.decode("utf-8")"""
+    return await asyncio.to_thread(_download_with_yt_dlp, _normalize_youtube_url(value), True)
 
 
 class YouTubeAPI:
