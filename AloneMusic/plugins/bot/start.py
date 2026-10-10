@@ -175,7 +175,7 @@ async def start_pm(client, message: Message, _):
         has_spoiler=False,
         message_effect_id=random.choice(EFFECT_ID),
         caption=caption,
-        parse_mode=ParseMode.MARKDOWN,
+        parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(out),
     )
 
