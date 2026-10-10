@@ -91,11 +91,11 @@ confirmer = {}
 
 START_IMG_URL = getenv(
     "START_IMG_URL",
-    "https://repgyetdcodkynrbxocg.supabase.co/storage/v1/object/public/images/telegram-1776841034406-c79c4ca7.jpg",
+    "https://i.ibb.co/DHVGdLJg/772800769a10.jpg,
 )
 PING_IMG_URL = getenv(
     "PING_IMG_URL",
-    "https://repgyetdcodkynrbxocg.supabase.co/storage/v1/object/public/images/telegram-1776841063817-c34c8f54.jpg",
+    "https://i.ibb.co/DHVGdLJg/772800769a10.jpg",
 )
 PLAYLIST_IMG_URL = "https://repgyetdcodkynrbxocg.supabase.co/storage/v1/object/public/images/telegram-1776841014403-6abf3244.jpg"
 STATS_IMG_URL = "https://repgyetdcodkynrbxocg.supabase.co/storage/v1/object/public/images/telegram-1776841063817-c34c8f54.jpg"
