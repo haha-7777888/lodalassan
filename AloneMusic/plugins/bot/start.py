@@ -161,24 +161,23 @@ async def start_pm(client, message: Message, _):
                 f"@{message.from_user.username}"
             ),
         )
+        
+    # Normal private start panel
+    out = private_panel(_)
 
+    caption = _["start_2"].format(
+        message.from_user.mention,
+        app.mention,
+    )
 
-# Normal private start panel
-out = private_panel(_)
-
-caption = _["start_2"].format(
-    message.from_user.mention,
-    app.mention,
-)
-
-await message.reply_photo(
-    photo=config.START_IMG_URL,
-    caption=caption,
-    has_spoiler=False,
-    message_effect_id=random.choice(EFFECT_ID),
-    parse_mode=ParseMode.HTML,
-    reply_markup=InlineKeyboardMarkup(out),
-)
+    await message.reply_photo(
+        photo=config.START_IMG_URL,
+        has_spoiler=False,
+        message_effect_id=random.choice(EFFECT_ID),
+        caption=caption,
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=InlineKeyboardMarkup(out),
+    )
 
 
 
